@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Bookmark, CalendarDays, Compass, Heart, Home, ImagePlus, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, ShieldCheck, ShoppingBag, Users, X } from "lucide-react";
@@ -12,7 +12,7 @@ const nav=[{label:"Campus feed",href:"/dashboard",icon:Home},{label:"Explore",hr
 const stamp=(date:string)=>{const d=Date.now()-new Date(date).getTime();if(d<60000)return "just now";if(d<3600000)return Math.floor(d/60000)+"m";if(d<86400000)return Math.floor(d/3600000)+"h";return Math.floor(d/86400000)+"d";};
 export default function Dashboard(){
  const router=useRouter();const [userId,setUserId]=useState("");const [name,setName]=useState("Student");const [collegeId,setCollegeId]=useState<string|null>(null);const [verified,setVerified]=useState(false);const [posts,setPosts]=useState<Post[]>([]);const [stories,setStories]=useState<Story[]>([]);const [media,setMedia]=useState<Record<string,string>>({});const [loading,setLoading]=useState(true);const [message,setMessage]=useState("");const [photo,setPhoto]=useState<File|null>(null);const [posting,setPosting]=useState(false);const [savedOnly,setSavedOnly]=useState(false);const [comments,setComments]=useState<Record<string,string>>({});const [commentOpen,setCommentOpen]=useState<string|null>(null);
- const sb=createClient();
+ const sb=useMemo(()=>createClient(),[]);
  const load=useCallback(async()=>{
   const {data:{user},error}=await sb.auth.getUser();if(error||!user){router.replace("/login");return;}
   setUserId(user.id);
@@ -27,7 +27,7 @@ export default function Dashboard(){
   const signed=await Promise.all(paths.map(async path=>{const {data}=await sb.storage.from("campus-media").createSignedUrl(path,3600);return [path,data?.signedUrl||""] as const;}));setMedia(Object.fromEntries(signed));
   setLoading(false);
  },[router,sb,savedOnly]);
- useEffect(()=>{void load();},[load]);
+ useEffect(()=>{setSavedOnly(new URLSearchParams(window.location.search).get("saved")==="1");},[]);\n useEffect(()=>{void load();},[load]);
  async function createPost(e:React.FormEvent){e.preventDefault();if(!verified||(!message.trim()&&!photo))return;setPosting(true);let image_path:string|null=null;
   if(photo){if(!["image/jpeg","image/png","image/webp"].includes(photo.type)||photo.size>8*1024*1024){alert("Choose a JPG, PNG or WebP image under 8 MB.");setPosting(false);return;}const path=userId+"/"+crypto.randomUUID()+"-"+photo.name.replace(/[^a-zA-Z0-9._-]/g,"");const {error}=await sb.storage.from("campus-media").upload(path,photo,{contentType:photo.type,upsert:false});if(error){alert(error.message);setPosting(false);return;}image_path=path;}
   const {error}=await sb.from("posts").insert({user_id:userId,content:message.trim(),image_path});if(error){alert(error.message);setPosting(false);return;}setMessage("");setPhoto(null);setPosting(false);await load();
