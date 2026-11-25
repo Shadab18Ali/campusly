@@ -52,7 +52,19 @@ export async function GET() {
   }
 }
 
+// Reject cross-site form posts: a browser-sent Origin must match this host.
+function isSameOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === request.headers.get("host");
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Cross-site request blocked." }, { status: 403 });
   const { user, isAdmin } = await getAdminSession();
   if (!user) return NextResponse.json({ error: "Please log in." }, { status: 401 });
   if (!isAdmin) return NextResponse.json({ error: "Admin access required." }, { status: 403 });

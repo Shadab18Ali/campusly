@@ -25,7 +25,7 @@ Audit date: 25 November 2026 · Branch audited: `feat/admin-verification` (HEAD 
 | 4 | Email confirmation | BLOCKED | `app/signup/page.tsx`, `app/verify/page.tsx` | Supabase Auth settings | None | Redirect `/verify` must be allow-listed; SMTP unknown | Configure Site URL, redirect allow-list and SMTP in Supabase |
 | 5 | Login / logout | IMPLEMENTED BUT NOT VERIFIED | `app/login/page.tsx`, `app/dashboard/page.tsx` (logout) | Supabase Auth | HTTP 200 | No server-side session middleware; logout is client-side | Live test |
 | 6 | Password recovery & reset | IMPLEMENTED BUT NOT VERIFIED | `app/forgot-password/page.tsx`, `app/reset-password/page.tsx` | Supabase Auth | HTTP 200 | Relies on Auth allow-list | Configure and test the reset email flow |
-| 7 | Protected routes | PARTIALLY IMPLEMENTED | `app/dashboard/page.tsx`, `app/profile/page.tsx`, `app/verify/page.tsx` | RLS | Admin route: 307 to /login and admin API 401 verified over HTTP. Student routes return 200 shells and redirect on the client | No server-side middleware for student pages; the HTML shell is public (data is still RLS-protected) | Add an `@supabase/ssr` middleware that redirects unauthenticated requests |
+| 7 | Protected routes | IMPLEMENTED BUT NOT VERIFIED | `middleware.ts`, `app/login/page.tsx` (honours `?next=`) | RLS | Live HTTP: /dashboard, /profile, /verify, /admin/* return 307 to /login when logged out | Middleware session check not tested with a real signed-in cookie | Test with a real Supabase session |
 | 8 | Student profile edit (name, dept, course, year, bio) | COMPLETE AND VERIFIED (DB level) | `app/profile/page.tsx`, `0003_profile_edit_permissions.sql` | `profiles` column grants | DB tests: student can edit permitted fields; cannot set `is_verified` or `role`; cannot edit another profile | UI save flow not executed in browser | Browser test |
 | 9 | Profile photo, cover photo | NOT IMPLEMENTED | — | would need `avatar_path` / cover columns (only `avatar_path` exists) | — | — | Build upload + display |
 | 10 | Public student profile page (others' view) | NOT IMPLEMENTED | — | — | — | — | Build `/students/[id]` |
@@ -62,17 +62,17 @@ Audit date: 25 November 2026 · Branch audited: `feat/admin-verification` (HEAD 
 | 41 | Admin: user management, post moderation, suspension, college management, audit viewer | NOT IMPLEMENTED | — | — | — | Only verification review exists | Part 11 |
 | 42 | Legal pages (privacy, terms) | IMPLEMENTED BUT NOT VERIFIED — **requires legal review** | `app/privacy/page.tsx`, `app/terms/page.tsx` | — | HTTP 200 | Starter drafts, not legal advice | Legal review before launch |
 | 43 | Profile visibility (who can read profiles) | COMPLETE AND VERIFIED (fixed in 0006) | `0006_profile_visibility_hardening.sql` | `profiles` | DB tests: unverified sees only self; verified sees verified peers only | Was previously readable by all authenticated users (privacy bug, fixed) | — |
-| 44 | Campus-scoped feed | NOT IMPLEMENTED | `0004` policy allows all verified students to read all posts | `posts`, `profiles.college_id` | — | README/Overview say posts are campus-scoped; they are not | Add college filter to the policy and feed |
+| 44 | Campus-scoped feed | COMPLETE AND VERIFIED (DB level) | `0007_college_scoped_visibility.sql` | `posts`, `profiles.college_id` | DB tests: other-college student cannot read, like or comment; same-college student can; no-college student sees nothing from others | Students with no college see only their own posts | Live feed test |
 
 ## Security findings
 
 | Severity | Finding | Status |
 |---|---|---|
 | High (fixed) | Any signed-in user, including unverified accounts, could read every profile row. | Fixed in migration 0006, with DB tests. |
-| Medium | Campus feed is not scoped to the student's college, despite docs saying it is. | Open. |
-| Medium | Student pages are not protected server-side. The HTML shell is public and redirects in the browser. Data is still RLS-protected. | Open. |
+| High (fixed) | Verified students across all colleges could read each other's posts. | Fixed in migration 0007, with DB tests. |
+| Medium (fixed) | Student pages were guarded only in the browser. | `middleware.ts` redirects logged-out requests (live-tested). |
+| Medium (fixed) | Admin POST had no cross-site check. | Same-origin check returns 403 (live-tested). |
 | Medium | Admin access is gated by a single email allowlist. There is no role table, no MFA requirement and no rate limit on the admin API. | Open; design decision needed. |
-| Medium | The admin API performs no CSRF check on POST. It relies on the same-site Supabase session cookie. | Open; add an Origin check. |
 | Low | No uniqueness on pending verifications, so a student can submit many. | Open. |
 | Low | Client-side file checks only in the browser. Server enforces bucket size and MIME type. Magic-byte validation is missing. | Open. |
 | Low | Story and post media is kept in a bucket whose read policy lets any verified student read any file path. Paths are unguessable UUIDs, but this is not a hard guarantee. | Open. |

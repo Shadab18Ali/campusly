@@ -17,6 +17,15 @@ Last updated: 25 November 2026 · Branch: `feat/admin-verification`
 | CI | [~] typecheck + build only | Added Postgres 16 service job running `npm run test:db`; `npm ci`; placeholder public env for build | `.github/workflows/ci.yml` | — | Pending GitHub run | [~] |
 | Docs | Outdated | Added `FEATURE_AUDIT.md`, this file; corrected README and overview | `docs/*`, `README.md` | — | — | ✅ |
 
+## Milestone 2 — Security and campus scoping (this session)
+
+| Item | Result |
+|---|---|
+| Migration 0007: posts, likes, comments, stories visible only within the viewer's college | ✅ 30/30 DB tests |
+| Server middleware redirects logged-out users from protected routes | ✅ live HTTP 307 checks; [~] not tested with a real session |
+| Login honours `?next=` (same-site paths only) | ✅ build; [~] not browser-tested |
+| Admin POST rejects cross-site Origin | ✅ live HTTP 403 check |
+
 ## Feature milestones
 
 | Feature | Status | Notes |
@@ -27,7 +36,7 @@ Last updated: 25 November 2026 · Branch: `feat/admin-verification`
 | Profile photo / cover / public profile page | ⬜ | |
 | Verification submission, pending status | [~] | DB enforced and tested |
 | Admin review (approve / reject / audit) | [~] | DB tested; end-to-end not run |
-| Campus feed (text, image, like, comment, save) | [~] | DB tested for like/comment/post; UI not browser-tested |
+| Campus feed (text, image, like, comment, save) | [~] | College-scoped at DB level (0007) | DB tested for like/comment/post; UI not browser-tested |
 | Reply to comments, edit/delete UI, pagination, share page | ⬜ | |
 | Stories (video, viewer, reactions) | ⬜ | Image stories present, not tested |
 | Explore / search / suggestions | ⬜ | |
@@ -38,8 +47,8 @@ Last updated: 25 November 2026 · Branch: `feat/admin-verification`
 | Marketplace (Part 9) | ⬜ | Nav link points to a missing route |
 | Notifications (Part 10) | ⬜ | |
 | Admin: moderation, reports, suspension, colleges, audit viewer (Part 11) | ⬜ | |
-| Campus-scoped feed | ⬜ | Policy is not college-scoped |
-| Server-side route protection (middleware) | ⬜ | |
+| Campus-scoped feed | ✅ (DB) | Migration 0007 |
+| Server-side route protection (middleware) | [~] | `middleware.ts`, live-checked |
 | Legal review of privacy and terms | [!] | Requires a human lawyer |
 
 ## Manual action required before testing or launch

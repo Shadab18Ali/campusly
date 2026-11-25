@@ -216,3 +216,29 @@ test("verified student sees verified peers but not unverified profiles", async (
   assert.ok(!ids.includes(unverified), "unverified profile must be hidden from verified students");
   assert.ok(!ids.includes(student), "pending student profile must be hidden from verified students");
 });
+
+// ---------- Campus scoping (migration 0007) ----------
+test("verified student at another college cannot see a campus-A post", async () => {
+  const rows = await asUser(db, otherVerified, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(rows.length, 0);
+});
+
+test("verified student at another college cannot like or comment on a campus-A post", async () => {
+  await asUser(db, otherVerified, async (c) => {
+    assert.ok(await fails(c, "insert into public.post_likes(post_id,user_id) values ($1,$2)", [postId, otherVerified]));
+    assert.ok(await fails(c, "insert into public.post_comments(post_id,user_id,body) values ($1,$2,'hi')", [postId, otherVerified]));
+  });
+});
+
+test("verified student at the same college sees the post", async () => {
+  const sameCollege = await createUser(db, { name: "Classmate", college: "Campus A", verified: true });
+  const rows = await asUser(db, sameCollege, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(rows.length, 1);
+});
+
+test("a verified student with no college sees no campus posts from others", async () => {
+  const orphan = await createUser(db, { name: "No college", college: "", verified: true });
+  await db.query("update public.profiles set college_id = null where id = $1", [orphan]);
+  const rows = await asUser(db, orphan, async (c) => (await c.query("select id from public.posts")).rows);
+  assert.equal(rows.length, 0);
+});
