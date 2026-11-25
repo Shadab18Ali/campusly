@@ -271,3 +271,16 @@ test("campus events are limited to the viewer's college", async () => {
   const titles = await asUser(db, verified, async (c) => (await c.query("select title from public.campus_events order by title")).rows.map((r) => r.title));
   assert.deepEqual(titles, ["A event"]);
 });
+
+// ---------- Self-review block (migration 0009) ----------
+test("an administrator cannot approve their own verification request", async () => {
+  const { rows: [{ id: ownId }] } = await db.query(
+    "insert into public.student_verifications(user_id,document_path,document_type,status) values ($1,$2,'college_id','pending') returning id",
+    [admin, `${admin}/self.pdf`]);
+  await db.query("begin");
+  try {
+    await assert.rejects(
+      db.query("select public.admin_review_student_verification($1,$2,'approved',null)", [ownId, admin]),
+      /cannot review their own/);
+  } finally { await db.query("rollback"); }
+});

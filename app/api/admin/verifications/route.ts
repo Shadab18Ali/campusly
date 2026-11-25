@@ -19,7 +19,9 @@ export async function GET() {
       .limit(100);
     if (error) throw error;
 
-    const items = await Promise.all((data || []).map(async (row: any) => {
+    // Admins never see their own requests in the review queue.
+    const others = (data || []).filter((row: any) => row.user_id !== user.id);
+    const items = await Promise.all(others.map(async (row: any) => {
       const [{ data: signed, error: signedError }, { data: authUser }] = await Promise.all([
         admin.storage.from("student-verification").createSignedUrl(row.document_path, 600),
         admin.auth.admin.getUserById(row.user_id),
@@ -82,6 +84,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const admin = createAdminClient();
+    // Look up the request owner on the server; never trust the browser for this.
+    const { data: target, error: lookupError } = await admin
+      .from("student_verifications")
+      .select("user_id")
+      .eq("id", verificationId)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!target) return NextResponse.json({ error: "Verification request not found." }, { status: 404 });
+    if (target.user_id === user.id) {
+      return NextResponse.json({ error: "Administrators cannot review their own request." }, { status: 403 });
+    }
     const { error } = await admin.rpc("admin_review_student_verification", {
       p_verification_id: verificationId,
       p_reviewer_id: user.id,
