@@ -1,0 +1,10 @@
+"use client";
+import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+export default function ResetPassword(){
+ const router=useRouter();const [password,setPassword]=useState("");const [confirm,setConfirm]=useState("");const [busy,setBusy]=useState(false);const [error,setError]=useState("");const [done,setDone]=useState(false);
+ async function submit(e:React.FormEvent){e.preventDefault();setError("");if(password.length<8){setError("Use at least 8 characters.");return;}if(password!==confirm){setError("Your passwords do not match.");return;}setBusy(true);try{const sb=createClient();const {error}=await sb.auth.updateUser({password});if(error)throw error;setDone(true);setTimeout(()=>router.push("/dashboard"),1200);}catch(e){setError(e instanceof Error?e.message:"The reset link may have expired. Request a new one.");}finally{setBusy(false);}}
+ return <main className="grid min-h-screen place-items-center px-5"><section className="card w-full max-w-md p-8"><Link href="/login" className="text-sm font-bold text-violet-600">← Login</Link><h1 className="mt-8 text-3xl font-black">Choose a new password.</h1><p className="mt-2 text-sm text-slate-500">Make it at least 8 characters long.</p>{done?<p role="status" className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">Password updated. Taking you to your dashboard…</p>:<form onSubmit={submit} className="mt-6 space-y-4"><label className="block text-sm font-bold">New password<input required minLength={8} type="password" className="input mt-2" value={password} onChange={e=>setPassword(e.target.value)}/></label><label className="block text-sm font-bold">Confirm password<input required minLength={8} type="password" className="input mt-2" value={confirm} onChange={e=>setConfirm(e.target.value)}/></label>{error&&<p role="alert" className="text-sm text-rose-600">{error}</p>}<button disabled={busy} className="btn w-full">{busy?"Updating…":"Update password"}</button></form>}</section></main>;
+}
