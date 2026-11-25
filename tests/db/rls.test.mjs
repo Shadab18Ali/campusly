@@ -67,8 +67,8 @@ test("signup trigger creates profile as non-admin, unverified", async () => {
 test("student cannot self-approve their verification", async () => {
   const err = await asUser(db, student, (c) => fails(c,
     "update public.student_verifications set status = 'approved' where id = $1", [pendingVerificationId]));
-  // No UPDATE policy exists, so RLS silently affects zero rows. Confirm nothing changed.
-  assert.equal(err, null);
+  // UPDATE is not granted to students (migration 0008) so the statement is refused. Confirm nothing changed.
+  assert.match(err ?? "", /permission denied/);
   const { rows } = await db.query("select status from public.student_verifications where id = $1", [pendingVerificationId]);
   assert.equal(rows[0].status, "pending");
 });
@@ -104,9 +104,9 @@ test("student can read own document path only", async () => {
   assert.deepEqual(rows.map((r) => r.name), [`${student}/doc-1.pdf`]);
 });
 
-test("anon cannot read verification rows or documents", async () => {
-  const rows = await asAnon(db, async (c) => (await c.query("select id from public.student_verifications")).rows);
-  assert.equal(rows.length, 0);
+test("anon has no table access at all", async () => {
+  const err = await asAnon(db, (c) => fails(c, "select id from public.student_verifications"));
+  assert.match(err ?? "", /permission denied/);
 });
 
 // ---------- Admin-only operations ----------
@@ -241,4 +241,33 @@ test("a verified student with no college sees no campus posts from others", asyn
   await db.query("update public.profiles set college_id = null where id = $1", [orphan]);
   const rows = await asUser(db, orphan, async (c) => (await c.query("select id from public.posts")).rows);
   assert.equal(rows.length, 0);
+});
+
+// ---------- Least privilege (migration 0008) ----------
+test("authenticated users cannot TRUNCATE any public table", async () => {
+  const err = await asUser(db, verified, (c) => fails(c, "truncate public.posts"));
+  assert.match(err ?? "", /permission denied/);
+});
+
+test("authenticated users have no table privilege on the verification audit log", async () => {
+  const { rows } = await db.query(
+    "select has_table_privilege('authenticated','public.student_verification_audit','SELECT') as s, has_table_privilege('authenticated','public.student_verification_audit','INSERT') as i");
+  assert.equal(rows[0].s, false);
+  assert.equal(rows[0].i, false);
+});
+
+test("trigger and review functions are not executable by app roles", async () => {
+  const { rows } = await db.query(`select
+    has_function_privilege('authenticated','public.handle_new_campusly_user()','EXECUTE') as trig_auth,
+    has_function_privilege('anon','public.handle_new_campusly_user()','EXECUTE') as trig_anon`);
+  assert.equal(rows[0].trig_auth, false);
+  assert.equal(rows[0].trig_anon, false);
+});
+
+test("campus events are limited to the viewer's college", async () => {
+  const { rows: [{ id: campusA }] } = await db.query("select college_id as id from public.profiles where id=$1", [verified]);
+  const { rows: [{ id: campusB }] } = await db.query("select college_id as id from public.profiles where id=$1", [otherVerified]);
+  await db.query("insert into public.campus_events(college_id,title,starts_at) values ($1,'A event',now()), ($2,'B event',now())", [campusA, campusB]);
+  const titles = await asUser(db, verified, async (c) => (await c.query("select title from public.campus_events order by title")).rows.map((r) => r.title));
+  assert.deepEqual(titles, ["A event"]);
 });
