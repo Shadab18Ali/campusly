@@ -27,7 +27,8 @@ export default function Dashboard(){
   const signed=await Promise.all(paths.map(async path=>{const {data}=await sb.storage.from("campus-media").createSignedUrl(path,3600);return [path,data?.signedUrl||""] as const;}));setMedia(Object.fromEntries(signed));
   setLoading(false);
  },[router,sb,savedOnly]);
- useEffect(()=>{setSavedOnly(new URLSearchParams(window.location.search).get("saved")==="1");},[]);\n useEffect(()=>{void load();},[load]);
+ useEffect(()=>{setSavedOnly(new URLSearchParams(window.location.search).get("saved")==="1");},[]);
+ useEffect(()=>{void load();},[load]);
  async function createPost(e:React.FormEvent){e.preventDefault();if(!verified||(!message.trim()&&!photo))return;setPosting(true);let image_path:string|null=null;
   if(photo){if(!["image/jpeg","image/png","image/webp"].includes(photo.type)||photo.size>8*1024*1024){alert("Choose a JPG, PNG or WebP image under 8 MB.");setPosting(false);return;}const path=userId+"/"+crypto.randomUUID()+"-"+photo.name.replace(/[^a-zA-Z0-9._-]/g,"");const {error}=await sb.storage.from("campus-media").upload(path,photo,{contentType:photo.type,upsert:false});if(error){alert(error.message);setPosting(false);return;}image_path=path;}
   const {error}=await sb.from("posts").insert({user_id:userId,content:message.trim(),image_path});if(error){alert(error.message);setPosting(false);return;}setMessage("");setPhoto(null);setPosting(false);await load();
