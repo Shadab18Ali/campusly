@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Bookmark, CalendarDays, Compass, Heart, Home, ImagePlus, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, ShieldCheck, ShoppingBag, Users, X } from "lucide-react";
@@ -12,8 +12,10 @@ const nav=[{label:"Campus feed",href:"/dashboard",icon:Home},{label:"Explore",hr
 const stamp=(date:string)=>{const d=Date.now()-new Date(date).getTime();if(d<60000)return "just now";if(d<3600000)return Math.floor(d/60000)+"m";if(d<86400000)return Math.floor(d/3600000)+"h";return Math.floor(d/86400000)+"d";};
 export default function Dashboard(){
  const router=useRouter();const [userId,setUserId]=useState("");const [name,setName]=useState("Student");const [collegeId,setCollegeId]=useState<string|null>(null);const [verified,setVerified]=useState(false);const [posts,setPosts]=useState<Post[]>([]);const [stories,setStories]=useState<Story[]>([]);const [media,setMedia]=useState<Record<string,string>>({});const [loading,setLoading]=useState(true);const [message,setMessage]=useState("");const [photo,setPhoto]=useState<File|null>(null);const [posting,setPosting]=useState(false);const [savedOnly,setSavedOnly]=useState(false);const [comments,setComments]=useState<Record<string,string>>({});const [commentOpen,setCommentOpen]=useState<string|null>(null);
- const sb=useMemo(()=>createClient(),[]);
+ const [sb,setSb]=useState<ReturnType<typeof createClient>|null>(null);
+ useEffect(()=>{try{setSb(createClient());}catch{setLoading(false);}},[]);
  const load=useCallback(async()=>{
+  if(!sb){setLoading(false);return;}
   const {data:{user},error}=await sb.auth.getUser();if(error||!user){router.replace("/login");return;}
   setUserId(user.id);
   const {data:profile}=await sb.from("profiles").select("full_name,college_id,is_verified").eq("id",user.id).maybeSingle();
@@ -29,15 +31,15 @@ export default function Dashboard(){
  },[router,sb,savedOnly]);
  useEffect(()=>{setSavedOnly(new URLSearchParams(window.location.search).get("saved")==="1");},[]);
  useEffect(()=>{void load();},[load]);
- async function createPost(e:React.FormEvent){e.preventDefault();if(!verified||(!message.trim()&&!photo))return;setPosting(true);let image_path:string|null=null;
+ async function createPost(e:React.FormEvent){e.preventDefault();if(!sb)return;if(!verified||(!message.trim()&&!photo))return;setPosting(true);let image_path:string|null=null;
   if(photo){if(!["image/jpeg","image/png","image/webp"].includes(photo.type)||photo.size>8*1024*1024){alert("Choose a JPG, PNG or WebP image under 8 MB.");setPosting(false);return;}const path=userId+"/"+crypto.randomUUID()+"-"+photo.name.replace(/[^a-zA-Z0-9._-]/g,"");const {error}=await sb.storage.from("campus-media").upload(path,photo,{contentType:photo.type,upsert:false});if(error){alert(error.message);setPosting(false);return;}image_path=path;}
   const {error}=await sb.from("posts").insert({user_id:userId,content:message.trim(),image_path});if(error){alert(error.message);setPosting(false);return;}setMessage("");setPhoto(null);setPosting(false);await load();
  }
- async function toggleLike(post:Post){const liked=(post.post_likes||[]).some(x=>x.user_id===userId);const result=liked?await sb.from("post_likes").delete().eq("post_id",post.id).eq("user_id",userId):await sb.from("post_likes").insert({post_id:post.id,user_id:userId});if(result.error)alert(result.error.message);else await load();}
- async function toggleSave(post:Post){const {data}=await sb.from("saved_posts").select("post_id").eq("post_id",post.id).eq("user_id",userId).maybeSingle();const result=data?await sb.from("saved_posts").delete().eq("post_id",post.id).eq("user_id",userId):await sb.from("saved_posts").insert({post_id:post.id,user_id:userId});if(result.error)alert(result.error.message);else await load();}
+ async function toggleLike(post:Post){if(!sb)return;const liked=(post.post_likes||[]).some(x=>x.user_id===userId);const result=liked?await sb.from("post_likes").delete().eq("post_id",post.id).eq("user_id",userId):await sb.from("post_likes").insert({post_id:post.id,user_id:userId});if(result.error)alert(result.error.message);else await load();}
+ async function toggleSave(post:Post){if(!sb)return;const {data}=await sb.from("saved_posts").select("post_id").eq("post_id",post.id).eq("user_id",userId).maybeSingle();const result=data?await sb.from("saved_posts").delete().eq("post_id",post.id).eq("user_id",userId):await sb.from("saved_posts").insert({post_id:post.id,user_id:userId});if(result.error)alert(result.error.message);else await load();}
  async function addComment(post:Post){const body=(comments[post.id]||"").trim();if(!body)return;const {error}=await sb.from("post_comments").insert({post_id:post.id,user_id:userId,body});if(error)alert(error.message);else{setComments(v=>({...v,[post.id]:""}));await load();}}
- async function logout(){await sb.auth.signOut();router.push("/");router.refresh();}
- async function uploadStory(file:File){if(!verified)return;if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>8*1024*1024){alert("Choose an image under 8 MB.");return;}const path=userId+"/story-"+crypto.randomUUID();const {error:uploadError}=await sb.storage.from("campus-media").upload(path,file,{contentType:file.type});if(uploadError){alert(uploadError.message);return;}const {error}=await sb.from("stories").insert({user_id:userId,image_path:path});if(error)alert(error.message);else await load();}
+ async function logout(){if(!sb)return;await sb.auth.signOut();router.push("/");router.refresh();}
+ async function uploadStory(file:File){if(!sb||!verified)return;if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>8*1024*1024){alert("Choose an image under 8 MB.");return;}const path=userId+"/story-"+crypto.randomUUID();const {error:uploadError}=await sb.storage.from("campus-media").upload(path,file,{contentType:file.type});if(uploadError){alert(uploadError.message);return;}const {error}=await sb.from("stories").insert({user_id:userId,image_path:path});if(error)alert(error.message);else await load();}
  return <div className="campus-shell">
   <aside className="campus-rail"><Link href="/" className="campus-wordmark">campusly<span>.</span></Link><div className="rail-label">YOUR SPACE</div>{nav.map(({label,href,icon:Icon},i)=><Link key={label} href={href} className={"rail-link "+(i===0&&!savedOnly?"active":"")}><Icon size={19}/>{label}</Link>)}<Link href="/verify" className="rail-link"><ShieldCheck size={19}/>Verification</Link><div className="rail-bottom"><Link href="/profile" className="rail-user"><span className="avatar">{name.slice(0,1).toUpperCase()}</span><span><b>{name}</b><small>{verified?"Verified student":"Verification pending"}</small></span></Link><button className="rail-link" onClick={logout}><LogOut size={18}/>Log out</button></div></aside>
   <main className="campus-main"><div className="mobile-top"><Link href="/" className="campus-wordmark">campusly<span>.</span></Link><Link href="/profile" aria-label="My profile" className="avatar">{name.slice(0,1).toUpperCase()}</Link></div>
