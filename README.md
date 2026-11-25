@@ -15,6 +15,7 @@ Next.js App Router, TypeScript, Tailwind CSS, Supabase Auth, PostgreSQL with RLS
 4. Run migrations 0001–0005 in numerical order in the Supabase SQL Editor, after checking which have already been applied.
 5. Configure Supabase Auth Site URL and redirect allowlist for local and deployed confirmation/reset routes.
 6. Run `npm run dev`.
+7. Database tests (local Postgres only, never a production project): `DATABASE_URL=postgres://postgres:postgres@localhost:5432/campusly_test npm run test:db`. See `tests/db/README.md`.
 
 ## Current state
 - **Implemented foundation:** landing page, authentication, email confirmation, password recovery, profile, dashboard and student document submission.

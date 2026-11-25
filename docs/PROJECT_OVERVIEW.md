@@ -1,6 +1,6 @@
 # Campusly — Product overview and build status
 
-Last updated: 25 November 2026
+Last updated: 25 November 2026 (audit update; see docs/FEATURE_AUDIT.md)
 
 ## 1. What we are building
 
@@ -67,6 +67,8 @@ The following is present in the `feat/admin-verification` development branch. Pr
 - Dashboard UI includes the initial feed experience and interactions for posts, likes, comments, saved posts and stories.
 - Campus media uses a separate private storage bucket with authenticated/verified-user policies.
 - Verified-student access is enforced in the social tables' RLS policies.
+- **Correction:** the feed is not yet college-scoped. Any verified student can read any verified student's post. Comment replies, edit/delete UI and pagination are not built yet.
+- **Correction:** the Marketplace link in the navigation points to a route that does not exist.
 
 These social capabilities are an MVP foundation. They still need end-to-end testing with verified and unverified accounts, especially around college scoping, media access and policy edge cases.
 
@@ -92,6 +94,7 @@ Apply migrations in numerical order in the intended Supabase project:
 3. `0003_profile_edit_permissions.sql` — limits editable profile columns and tightens verification submission checks.
 4. `0004_campus_social.sql` — social tables, RLS and campus media storage.
 5. `0005_admin_verification_review.sql` — verification audit table and privileged review function.
+6. `0006_profile_visibility_hardening.sql` — profiles are readable only by their owner or, for verified students, by other verified students.
 
 Do not assume these migrations have run in every Supabase environment. Check the target project's migration history before applying them, and test on a non-production project first.
 
