@@ -284,3 +284,31 @@ test("an administrator cannot approve their own verification request", async () 
       /cannot review their own/);
   } finally { await db.query("rollback"); }
 });
+
+// ---------- Comment replies (migration 0011) ----------
+test("a reply to a comment on the same post is allowed", async () => {
+  const { rows: [{ id: postA }] } = await db.query("insert into public.posts(user_id,content) values ($1,'reply target A') returning id", [verified]);
+  const { rows: [{ id: parentA }] } = await db.query("insert into public.post_comments(post_id,user_id,body) values ($1,$2,'parent') returning id", [postA, verified]);
+  const classmate = await createUser(db, { name: "Reply Classmate", college: "Campus A", verified: true });
+  const err = await asUser(db, classmate, (c) => fails(c,
+    "insert into public.post_comments(post_id,user_id,body,parent_id) values ($1,$2,'reply',$3)", [postA, classmate, parentA]));
+  assert.equal(err, null);
+});
+
+test("a reply cannot point at a comment on a different post", async () => {
+  const { rows: [{ id: postB }] } = await db.query("insert into public.posts(user_id,content) values ($1,'reply target B') returning id", [verified]);
+  const { rows: [{ id: parentOnA }] } = await db.query(
+    "insert into public.post_comments(post_id,user_id,body) select id,$1,'other' from public.posts where content='reply target A' returning id", [verified]);
+  const err = await asUser(db, verified, (c) => fails(c,
+    "insert into public.post_comments(post_id,user_id,body,parent_id) values ($1,$2,'bad reply',$3)", [postB, verified, parentOnA]));
+  assert.ok(err, "expected the reply to be refused");
+});
+
+test("deleting a parent comment removes its replies", async () => {
+  const { rows: [{ id: postC }] } = await db.query("insert into public.posts(user_id,content) values ($1,'cascade target') returning id", [verified]);
+  const { rows: [{ id: parent }] } = await db.query("insert into public.post_comments(post_id,user_id,body) values ($1,$2,'p') returning id", [postC, verified]);
+  await db.query("insert into public.post_comments(post_id,user_id,body,parent_id) values ($1,$2,'r',$3)", [postC, verified, parent]);
+  await db.query("delete from public.post_comments where id = $1", [parent]);
+  const { rows } = await db.query("select count(*)::int as n from public.post_comments where post_id = $1", [postC]);
+  assert.equal(rows[0].n, 0);
+});
