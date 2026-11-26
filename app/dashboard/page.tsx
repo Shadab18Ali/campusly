@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Bookmark, CalendarDays, Compass, Heart, Home, ImagePlus, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, ShieldCheck, ShoppingBag, Users, X } from "lucide-react";
+import { Bookmark, CalendarDays, Compass, Heart, Home, ImagePlus, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, ShieldCheck, ShoppingBag, UserPlus, Users, X } from "lucide-react";
 
 type Post = { id:string; user_id:string; content:string; image_path:string|null; created_at:string; profiles?:{full_name:string;college_id:string|null}|null; post_likes?:{user_id:string}[]; post_comments?:{id:string}[] };
 type Comment = {id:string;post_id:string;parent_id:string|null;user_id:string;body:string;created_at:string;profiles?:{full_name:string}|null};
 type Story = {id:string;user_id:string;image_path:string;caption:string|null;created_at:string;profiles?:{full_name:string}|null};
-const nav=[{label:"Campus feed",href:"/dashboard",icon:Home},{label:"Explore",href:"/dashboard",icon:Compass},{label:"Saved",href:"/dashboard?saved=1",icon:Bookmark},{label:"Marketplace",href:"/marketplace",icon:ShoppingBag},{label:"My profile",href:"/profile",icon:Users}];
+const nav=[{label:"Campus feed",href:"/dashboard",icon:Home},{label:"Explore",href:"/dashboard",icon:Compass},{label:"Saved",href:"/dashboard?saved=1",icon:Bookmark},{label:"Friends",href:"/friends",icon:UserPlus},{label:"Marketplace",href:"/marketplace",icon:ShoppingBag},{label:"My profile",href:"/profile",icon:Users}];
 const stamp=(date:string)=>{const d=Date.now()-new Date(date).getTime();if(d<60000)return "just now";if(d<3600000)return Math.floor(d/60000)+"m";if(d<86400000)return Math.floor(d/3600000)+"h";return Math.floor(d/86400000)+"d";};
 export default function Dashboard(){
  const router=useRouter();const [userId,setUserId]=useState("");const [name,setName]=useState("Student");const [collegeId,setCollegeId]=useState<string|null>(null);const [verified,setVerified]=useState(false);const [posts,setPosts]=useState<Post[]>([]);const [stories,setStories]=useState<Story[]>([]);const [media,setMedia]=useState<Record<string,string>>({});const [loading,setLoading]=useState(true);const [message,setMessage]=useState("");const [photo,setPhoto]=useState<File|null>(null);const [posting,setPosting]=useState(false);const [savedOnly,setSavedOnly]=useState(false);const [comments,setComments]=useState<Record<string,string>>({});const [commentOpen,setCommentOpen]=useState<string|null>(null);const [allComments,setAllComments]=useState<Comment[]>([]);const [replyTo,setReplyTo]=useState<{postId:string;commentId:string;name:string}|null>(null);

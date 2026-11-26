@@ -312,3 +312,90 @@ test("deleting a parent comment removes its replies", async () => {
   const { rows } = await db.query("select count(*)::int as n from public.post_comments where post_id = $1", [postC]);
   assert.equal(rows[0].n, 0);
 });
+
+// ---------- Friends and blocking (migration 0012) ----------
+test("verified students can send a friend request, and it stays pending", async () => {
+  const a = await createUser(db, { name: "Friend A", college: "Campus F", verified: true });
+  const b = await createUser(db, { name: "Friend B", college: "Campus F", verified: true });
+  const status = await asUser(db, a, async (c) => {
+    await c.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [a, b]);
+    return (await c.query("select status from public.friendships where requester_id=$1 and addressee_id=$2", [a, b])).rows[0].status;
+  });
+  assert.equal(status, "pending");
+});
+
+test("unverified students cannot send friend requests", async () => {
+  const b = await createUser(db, { name: "Target", college: "Campus F", verified: true });
+  const err = await asUser(db, unverified, (c) => fails(c,
+    "insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [unverified, b]));
+  assert.ok(err);
+});
+
+test("a duplicate request in either direction is refused", async () => {
+  const a = await createUser(db, { name: "Dup A", college: "Campus D", verified: true });
+  const b = await createUser(db, { name: "Dup B", college: "Campus D", verified: true });
+  await db.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [a, b]);
+  const reverse = await asUser(db, b, (c) => fails(c,
+    "insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [b, a]));
+  assert.ok(reverse, "reverse duplicate should be refused");
+});
+
+test("a student cannot send a friend request to themselves", async () => {
+  const a = await createUser(db, { name: "Self", college: "Campus S", verified: true });
+  const err = await asUser(db, a, (c) => fails(c,
+    "insert into public.friendships(requester_id,addressee_id) values ($1,$1)", [a]));
+  assert.ok(err);
+});
+
+test("only the addressee can accept a request", async () => {
+  const a = await createUser(db, { name: "Acc A", college: "Campus X", verified: true });
+  const b = await createUser(db, { name: "Acc B", college: "Campus X", verified: true });
+  const { rows: [{ id }] } = await db.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2) returning id", [a, b]);
+  const requesterAccepts = await asUser(db, a, async (c) =>
+    (await c.query("update public.friendships set status='accepted', responded_at=now() where id=$1 returning id", [id])).rowCount);
+  assert.equal(requesterAccepts, 0);
+  const addresseeAccepts = await asUser(db, b, async (c) =>
+    (await c.query("update public.friendships set status='accepted', responded_at=now() where id=$1 returning id", [id])).rowCount);
+  assert.equal(addresseeAccepts, 1);
+});
+
+test("a third party cannot see someone else's friendship", async () => {
+  const a = await createUser(db, { name: "Pri A", college: "Campus P", verified: true });
+  const b = await createUser(db, { name: "Pri B", college: "Campus P", verified: true });
+  const c3 = await createUser(db, { name: "Pri C", college: "Campus P", verified: true });
+  await db.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [a, b]);
+  const rows = await asUser(db, c3, async (c) => (await c.query("select id from public.friendships where requester_id=$1", [a])).rows);
+  assert.equal(rows.length, 0);
+});
+
+test("blocking removes an existing friendship and stops new requests", async () => {
+  const a = await createUser(db, { name: "Blk A", college: "Campus B", verified: true });
+  const b = await createUser(db, { name: "Blk B", college: "Campus B", verified: true });
+  await db.query("insert into public.friendships(requester_id,addressee_id,status,responded_at) values ($1,$2,'accepted',now())", [a, b]);
+  await asUser(db, a, (c) => c.query("insert into public.user_blocks(blocker_id,blocked_id) values ($1,$2)", [a, b]), { commit: true });
+  const { rows } = await db.query("select id from public.friendships where requester_id=$1 and addressee_id=$2", [a, b]);
+  assert.equal(rows.length, 0, "friendship should be removed when blocked");
+  const err = await asUser(db, b, (c) => fails(c,
+    "insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [b, a]));
+  assert.ok(err, "blocked pair cannot request each other");
+  await db.query("delete from public.user_blocks where blocker_id=$1 and blocked_id=$2", [a, b]);
+});
+
+test("a blocked user's posts are hidden in both directions", async () => {
+  const a = await createUser(db, { name: "Post A", college: "Campus PB", verified: true });
+  const b = await createUser(db, { name: "Post B", college: "Campus PB", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'blocked content') returning id", [a]);
+  await db.query("insert into public.user_blocks(blocker_id,blocked_id) values ($1,$2)", [a, b]);
+  const seenByB = await asUser(db, b, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seenByB.length, 0, "blocked viewer must not see the blocker's posts");
+  const seenByA = await asUser(db, a, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seenByA.length, 1, "author still sees their own post");
+});
+
+test("users cannot read other users' block lists", async () => {
+  const a = await createUser(db, { name: "BL A", college: "Campus BL", verified: true });
+  const b = await createUser(db, { name: "BL B", college: "Campus BL", verified: true });
+  await db.query("insert into public.user_blocks(blocker_id,blocked_id) values ($1,$2)", [b, a]);
+  const rows = await asUser(db, a, async (c) => (await c.query("select blocker_id from public.user_blocks")).rows);
+  assert.equal(rows.length, 0);
+});
