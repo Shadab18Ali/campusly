@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 // Routes that need a signed-in session. Data is still protected by RLS;
 // this stops the protected HTML from being served to logged-out visitors.
-const PROTECTED = ["/dashboard", "/profile", "/verify", "/admin"];
+const PROTECTED = ["/dashboard", "/profile", "/verify", "/admin", "/friends"];
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
@@ -35,5 +35,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/profile/:path*", "/verify/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/profile/:path*", "/verify/:path*", "/admin/:path*", "/friends/:path*"],
 };
