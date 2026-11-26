@@ -399,3 +399,73 @@ test("users cannot read other users' block lists", async () => {
   const rows = await asUser(db, a, async (c) => (await c.query("select blocker_id from public.user_blocks")).rows);
   assert.equal(rows.length, 0);
 });
+
+// ---------- Notifications (migration 0013) ----------
+test("a like on a post notifies its author, not the liker", async () => {
+  const author = await createUser(db, { name: "Note Author", college: "Campus N", verified: true });
+  const liker = await createUser(db, { name: "Note Liker", college: "Campus N", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'notify me') returning id", [author]);
+  await db.query("insert into public.post_likes(post_id,user_id) values ($1,$2)", [postId, liker]);
+  const { rows } = await db.query("select kind from public.notifications where recipient_id=$1", [author]);
+  assert.deepEqual(rows.map((r) => r.kind), ["post_like"]);
+  const self = await db.query("select count(*)::int as n from public.notifications where recipient_id=$1 and actor_id=$1", [author]);
+  assert.equal(self.rows[0].n, 0);
+});
+
+test("a friend request and its acceptance each notify the right person", async () => {
+  const a = await createUser(db, { name: "Note A", college: "Campus NF", verified: true });
+  const b = await createUser(db, { name: "Note B", college: "Campus NF", verified: true });
+  const { rows: [{ id }] } = await db.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2) returning id", [a, b]);
+  await db.query("update public.friendships set status='accepted', responded_at=now() where id=$1", [id]);
+  const toB = await db.query("select kind from public.notifications where recipient_id=$1 and actor_id=$2", [b, a]);
+  assert.deepEqual(toB.rows.map((r) => r.kind), ["friend_request"]);
+  const toA = await db.query("select kind from public.notifications where recipient_id=$1 and actor_id=$2", [a, b]);
+  assert.deepEqual(toA.rows.map((r) => r.kind), ["friend_accepted"]);
+});
+
+test("a reply notifies the parent comment's author", async () => {
+  const postOwner = await createUser(db, { name: "Note Owner", college: "Campus NR", verified: true });
+  const commenter = await createUser(db, { name: "Note Commenter", college: "Campus NR", verified: true });
+  const replier = await createUser(db, { name: "Note Replier", college: "Campus NR", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'thread') returning id", [postOwner]);
+  const { rows: [{ id: parent }] } = await db.query("insert into public.post_comments(post_id,user_id,body) values ($1,$2,'top') returning id", [postId, commenter]);
+  await db.query("insert into public.post_comments(post_id,user_id,body,parent_id) values ($1,$2,'reply',$3)", [postId, replier, parent]);
+  const { rows } = await db.query("select kind from public.notifications where recipient_id=$1 and actor_id=$2", [commenter, replier]);
+  assert.deepEqual(rows.map((r) => r.kind), ["comment_reply"]);
+});
+
+test("blocked users generate no notifications", async () => {
+  const author = await createUser(db, { name: "Blocked Author", college: "Campus NB", verified: true });
+  const liker = await createUser(db, { name: "Blocked Liker", college: "Campus NB", verified: true });
+  await db.query("insert into public.user_blocks(blocker_id,blocked_id) values ($1,$2)", [author, liker]);
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'quiet') returning id", [author]);
+  await db.query("insert into public.post_likes(post_id,user_id) values ($1,$2)", [postId, liker]);
+  const { rows } = await db.query("select count(*)::int as n from public.notifications where recipient_id=$1", [author]);
+  assert.equal(rows[0].n, 0);
+});
+
+test("users read only their own notifications and cannot create them", async () => {
+  const author = await createUser(db, { name: "Read Author", college: "Campus NRd", verified: true });
+  const other = await createUser(db, { name: "Read Other", college: "Campus NRd", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'x') returning id", [author]);
+  await db.query("insert into public.post_likes(post_id,user_id) values ($1,$2)", [postId, other]);
+  const seenByOther = await asUser(db, other, async (c) => (await c.query("select id from public.notifications")).rows);
+  assert.equal(seenByOther.length, 0);
+  const forged = await asUser(db, other, (c) => fails(c,
+    "insert into public.notifications(recipient_id,actor_id,kind) values ($1,$2,'post_like')", [author, other]));
+  assert.ok(forged, "direct inserts must be refused");
+});
+
+test("a recipient can mark their notification read, but not change other fields", async () => {
+  const author = await createUser(db, { name: "Mark Author", college: "Campus NM", verified: true });
+  const liker = await createUser(db, { name: "Mark Liker", college: "Campus NM", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'m') returning id", [author]);
+  await db.query("insert into public.post_likes(post_id,user_id) values ($1,$2)", [postId, liker]);
+  const { rows: [{ id: nid }] } = await db.query("select id from public.notifications where recipient_id=$1", [author]);
+  const marked = await asUser(db, author, async (c) =>
+    (await c.query("update public.notifications set read_at=now() where id=$1 returning id", [nid])).rowCount);
+  assert.equal(marked, 1);
+  const changeKind = await asUser(db, author, (c) => fails(c,
+    "update public.notifications set kind='friend_request' where id=$1", [nid]));
+  assert.match(changeKind ?? "", /permission denied/);
+});
