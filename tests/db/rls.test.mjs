@@ -469,3 +469,40 @@ test("a recipient can mark their notification read, but not change other fields"
     "update public.notifications set kind='friend_request' where id=$1", [nid]));
   assert.match(changeKind ?? "", /permission denied/);
 });
+
+// ---------- Friends can see each other's posts (migration 0014) ----------
+test("a friend at a different college can see the post", async () => {
+  const author = await createUser(db, { name: "Fp Author", college: "Campus FP1", verified: true });
+  const friend = await createUser(db, { name: "Fp Friend", college: "Campus FP2", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'for friends') returning id", [author]);
+  await db.query("insert into public.friendships(requester_id,addressee_id,status,responded_at) values ($1,$2,'accepted',now())", [author, friend]);
+  const seen = await asUser(db, friend, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seen.length, 1);
+});
+
+test("a non-friend at a different college still cannot see the post", async () => {
+  const author = await createUser(db, { name: "Fn Author", college: "Campus FN1", verified: true });
+  const stranger = await createUser(db, { name: "Fn Stranger", college: "Campus FN2", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'private') returning id", [author]);
+  const seen = await asUser(db, stranger, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seen.length, 0);
+});
+
+test("a pending request does not grant access to posts", async () => {
+  const author = await createUser(db, { name: "Pp Author", college: "Campus PP1", verified: true });
+  const requester = await createUser(db, { name: "Pp Requester", college: "Campus PP2", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'pending') returning id", [author]);
+  await db.query("insert into public.friendships(requester_id,addressee_id) values ($1,$2)", [requester, author]);
+  const seen = await asUser(db, requester, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seen.length, 0);
+});
+
+test("blocking overrides friendship for posts", async () => {
+  const author = await createUser(db, { name: "Bf Author", college: "Campus BF1", verified: true });
+  const friend = await createUser(db, { name: "Bf Friend", college: "Campus BF2", verified: true });
+  const { rows: [{ id: postId }] } = await db.query("insert into public.posts(user_id,content) values ($1,'blocked friend') returning id", [author]);
+  await db.query("insert into public.friendships(requester_id,addressee_id,status,responded_at) values ($1,$2,'accepted',now())", [author, friend]);
+  await db.query("insert into public.user_blocks(blocker_id,blocked_id) values ($1,$2)", [friend, author]);
+  const seen = await asUser(db, friend, async (c) => (await c.query("select id from public.posts where id=$1", [postId])).rows);
+  assert.equal(seen.length, 0);
+});
