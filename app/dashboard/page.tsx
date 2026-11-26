@@ -21,7 +21,7 @@ export default function Dashboard(){
   const {data:profile}=await sb.from("profiles").select("full_name,college_id,is_verified").eq("id",user.id).maybeSingle();
   setName(profile?.full_name||"Student");setCollegeId(profile?.college_id||null);setVerified(Boolean(profile?.is_verified));
   if(!profile?.is_verified){setLoading(false);return;}
-  let query=sb.from("posts").select("id,user_id,content,image_path,created_at,profiles(full_name,college_id),post_likes(user_id),post_comments(id)").order("created_at",{ascending:false}).limit(30);
+  let query=sb.from("posts").select("id,user_id,content,image_path,created_at,profiles!posts_user_id_fkey(full_name,college_id),post_likes(user_id),post_comments(id)").order("created_at",{ascending:false}).limit(30);
   if(savedOnly){const {data:saves}=await sb.from("saved_posts").select("post_id").eq("user_id",user.id);const ids=(saves||[]).map(x=>x.post_id);if(!ids.length){setPosts([]);setLoading(false);return;}query=query.in("id",ids);}
   const [{data:postRows},{data:storyRows}]=await Promise.all([query,sb.from("stories").select("id,user_id,image_path,caption,created_at,profiles(full_name)").gt("expires_at",new Date().toISOString()).order("created_at",{ascending:false}).limit(20)]);
   const rows=(postRows||[]) as unknown as Post[];setPosts(rows);setStories((storyRows||[]) as unknown as Story[]);
